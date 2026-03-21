@@ -47,7 +47,7 @@ UW_QUERIES = [
     "claims assistant",
 ]
 
-MAX_JOBS = 20
+MAX_JOBS = 25
 
 
 # ── Scraper helpers ────────────────────────────────────────────────────────
