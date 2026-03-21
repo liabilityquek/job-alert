@@ -1,43 +1,81 @@
 """
 sheets_tracker.py
 
-Handles dedup tracking via sent_jobs.json and optional Google Sheets
-dashboard logging via Composio.
+Handles dedup tracking AND job logging via Google Sheets (Composio).
+Google Sheets is the single source of truth — no local sent_jobs.json needed.
 """
 
 import os
-import json
-from pathlib import Path
 from datetime import datetime
 
-SENT_JOBS_PATH = Path(__file__).parent / "sent_jobs.json"
-
 
 # ---------------------------------------------------------------------------
-# Dedup helpers
+# Google Sheets helpers
 # ---------------------------------------------------------------------------
 
-def load_sent_urls() -> set:
-    """Return a set of URLs that have already been sent."""
-    data = _load_sent_data()
-    return set(data.keys())
+def _get_toolset():
+    """Return a Composio ToolSet instance."""
+    from composio import ComposioToolSet  # type: ignore
+    return ComposioToolSet()
 
 
-def save_sent_urls(data: dict) -> None:
-    """Write the full sent-jobs dict to sent_jobs.json."""
+def _get_sheet_id() -> str | None:
+    """Return the tracker sheet ID from env, or None."""
+    return os.environ.get("TRACKER_SHEET_ID")
+
+
+def _read_sent_urls_from_sheet(sheet_id: str) -> set:
+    """Read all job URLs (column C) from the Google Sheet."""
     try:
-        with open(SENT_JOBS_PATH, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, default=str)
-    except OSError as exc:
-        print(f"[sheets_tracker] Error writing {SENT_JOBS_PATH}: {exc}")
+        from composio import Action  # type: ignore
+        toolset = _get_toolset()
 
+        result = toolset.execute_action(
+            action=Action.GOOGLESHEETS_BATCH_GET,
+            params={
+                "spreadsheet_id": sheet_id,
+                "sheet_name": "Sheet1",
+                "ranges": "Sheet1!C:C",
+            },
+        )
+
+        urls = set()
+        if result.get("successfull") or result.get("successful"):
+            data = result.get("data", {})
+            value_ranges = data.get("valueRanges", [])
+            if value_ranges:
+                rows = value_ranges[0].get("values", [])
+                for row in rows[1:]:  # skip header row
+                    if row and row[0]:
+                        urls.add(row[0].strip())
+
+        print(f"[sheets_tracker] Read {len(urls)} existing URL(s) from Google Sheet.")
+        return urls
+
+    except Exception as exc:
+        print(f"[sheets_tracker] Error reading from Google Sheet: {exc}")
+        return set()
+
+
+# ---------------------------------------------------------------------------
+# Dedup — reads from Google Sheets
+# ---------------------------------------------------------------------------
 
 def filter_new_jobs(jobs: list, pipeline: str) -> list:
-    """Remove jobs whose URL already appears in sent_jobs.json.
+    """Remove jobs whose URL already exists in the Google Sheet.
 
     Each job is expected to be a dict with at least a ``url`` key.
+    Falls back to no filtering if Google Sheets is unavailable.
     """
-    sent_urls = load_sent_urls()
+    sheet_id = _get_sheet_id()
+    if not sheet_id:
+        print("[sheets_tracker] TRACKER_SHEET_ID not set — skipping dedup.")
+        return jobs
+
+    sent_urls = _read_sent_urls_from_sheet(sheet_id)
+    if not sent_urls:
+        return jobs
+
     new_jobs = [j for j in jobs if j.get("url") not in sent_urls]
     skipped = len(jobs) - len(new_jobs)
     if skipped:
@@ -46,50 +84,17 @@ def filter_new_jobs(jobs: list, pipeline: str) -> list:
     return new_jobs
 
 
-def mark_jobs_sent(jobs: list, pipeline: str) -> None:
-    """Record jobs in sent_jobs.json after a successful email send.
-
-    Each job dict should contain ``url``, ``title``, ``company``,
-    ``source``, and ``score`` keys.
-    """
-    if not jobs:
-        return
-
-    data = _load_sent_data()
-    now = datetime.now().isoformat()
-
-    for job in jobs:
-        url = job.get("url")
-        if not url:
-            continue
-        data[url] = {
-            "title": job.get("title", ""),
-            "company": job.get("company", ""),
-            "source": job.get("source", ""),
-            "score": job.get("score", 0),
-            "date_found": now,
-            "pipeline": pipeline,
-        }
-
-    save_sent_urls(data)
-    print(f"[sheets_tracker] Marked {len(jobs)} job(s) as sent "
-          f"for pipeline '{pipeline}'.")
-
-
 # ---------------------------------------------------------------------------
-# Google Sheets dashboard (Composio)
+# Log to Google Sheets (append new rows)
 # ---------------------------------------------------------------------------
 
 def log_to_sheet(jobs: list, pipeline: str) -> None:
-    """Append matched jobs to a Google Sheet via Composio.
+    """Append matched jobs to the Google Sheet via Composio.
 
-    Requires:
-      - ``TRACKER_SHEET_ID`` env var set to the target spreadsheet ID.
-      - The ``composio_openai`` package installed and configured.
-
-    Fails gracefully if either requirement is not met.
+    Requires ``TRACKER_SHEET_ID`` env var set to the target spreadsheet ID.
+    Fails gracefully if not configured.
     """
-    sheet_id = os.environ.get("TRACKER_SHEET_ID")
+    sheet_id = _get_sheet_id()
     if not sheet_id:
         print("[sheets_tracker] TRACKER_SHEET_ID not set — skipping "
               "Google Sheets logging.")
@@ -99,14 +104,8 @@ def log_to_sheet(jobs: list, pipeline: str) -> None:
         return
 
     try:
-        from composio import ComposioToolSet, Action  # type: ignore
-    except ImportError:
-        print("[sheets_tracker] composio package not installed — skipping "
-              "Google Sheets logging.")
-        return
-
-    try:
-        toolset = ComposioToolSet()
+        from composio import Action  # type: ignore
+        toolset = _get_toolset()
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
         rows = []
@@ -119,13 +118,15 @@ def log_to_sheet(jobs: list, pipeline: str) -> None:
                 str(job.get("score", "")),
                 pipeline,
                 now,
+                "New",  # default status for tracking
             ])
 
         toolset.execute_action(
             action=Action.GOOGLESHEETS_BATCH_UPDATE,
             params={
                 "spreadsheet_id": sheet_id,
-                "range": "Sheet1!A:G",
+                "sheet_name": "Sheet1",
+                "range": "A:H",
                 "values": rows,
                 "major_dimension": "ROWS",
             },
@@ -138,16 +139,9 @@ def log_to_sheet(jobs: list, pipeline: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# mark_jobs_sent — now a no-op (Google Sheets handles everything)
 # ---------------------------------------------------------------------------
 
-def _load_sent_data() -> dict:
-    """Load and return the sent-jobs dict from disk."""
-    if not SENT_JOBS_PATH.exists():
-        return {}
-    try:
-        with open(SENT_JOBS_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError) as exc:
-        print(f"[sheets_tracker] Error reading {SENT_JOBS_PATH}: {exc}")
-        return {}
+def mark_jobs_sent(jobs: list, pipeline: str) -> None:
+    """No-op — dedup and logging are handled entirely via Google Sheets."""
+    pass
