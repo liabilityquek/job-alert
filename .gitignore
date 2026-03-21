@@ -1,9 +1,6 @@
 # Environment — contains API keys, never commit this
 .env
 
-# Resume profile — contains personal information
-resume_profile.py
-
 # Email preview output
 preview_email.html
 
