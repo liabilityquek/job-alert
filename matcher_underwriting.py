@@ -14,6 +14,7 @@ Threshold: 0.40  (lower bar — maps to ≥50% display score)
 
 from __future__ import annotations
 import re
+from datetime import datetime, timedelta
 import resume_profile as rp
 
 MATCH_THRESHOLD = 0.40
@@ -59,6 +60,18 @@ SOFT_SIGNALS = [
     "detail", "analytical", "communication", "organised", "organized",
     "accurate", "deadline", "teamwork", "multitask", "problem solving",
 ]
+
+# Singapore market salary benchmarks for underwriting roles (monthly SGD, 2025/2026 data)
+SALARY_BENCHMARKS = {
+    "underwriting assistant": (3500, 5000),
+    "underwriting executive": (4000, 6000),
+    "underwriting officer": (3800, 5500),
+    "underwriting analyst": (4500, 7000),
+    "insurance assistant": (3200, 4500),
+    "insurance executive": (3800, 5500),
+    "claims assistant": (3200, 4500),
+    "claims executive": (3800, 5500),
+}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -132,6 +145,52 @@ def keyword_match_score(job: dict) -> float:
 
     score = (role_s * 0.30) + (transfer_s * 0.35) + (tech_s * 0.20) + (soft_s * 0.15)
     return round(score, 4)
+
+
+# ── Expiring soon & salary benchmark helpers ─────────────────────────────────
+
+def _is_expiring_soon(job: dict) -> bool:
+    """Return True if job was posted 11+ days ago (within 3 days of 14-day cutoff)."""
+    posted = job.get("posted_date") or job.get("posted") or ""
+    if not posted:
+        return False
+    for fmt in ("%Y-%m-%d", "%d %b %Y", "%d/%m/%Y", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            posted_dt = datetime.strptime(posted.strip()[:19], fmt)
+            days_ago = (datetime.now() - posted_dt).days
+            return days_ago >= 11
+        except (ValueError, TypeError):
+            continue
+    return False
+
+
+def _salary_benchmark(job: dict) -> str:
+    """Compare job salary against market benchmarks. Returns label or ''."""
+    title_norm = _norm(job.get("title", ""))
+    bench = None
+    for role, rng in SALARY_BENCHMARKS.items():
+        if role in title_norm:
+            bench = rng
+            break
+    if bench is None:
+        return ""
+
+    salary_str = (job.get("salary") or "").lower().replace(",", "")
+    if not salary_str or "not disclosed" in salary_str:
+        return ""
+
+    nums = re.findall(r"[\d]+(?:\.[\d]+)?", salary_str)
+    if not nums:
+        return ""
+
+    sal_min = float(nums[0])
+    sal_max = float(nums[-1]) if len(nums) > 1 else sal_min
+
+    if sal_min >= bench[1]:
+        return "Above market"
+    if sal_max <= bench[0]:
+        return "Below market"
+    return "At market"
 
 
 # ── Analysis ──────────────────────────────────────────────────────────────────
@@ -213,6 +272,28 @@ def _analyse_job(job: dict, score: float) -> dict:
         f"{', '.join((matched_transfer + matched_tech)[:5]) or 'data entry, documentation, compliance, Excel'}"
     )
 
+    # ── Cover letter snippet (career transition emphasis) ───────────────────
+    transfer_str = ", ".join(matched_transfer[:3]) if matched_transfer else "document processing, data accuracy, and compliance"
+    tech_str = ", ".join(matched_tech[:2]) if matched_tech else "Excel and data analysis"
+
+    pivot_detail = "high-volume document processing, data accuracy, and compliance"
+    if any(kw in text for kw in ["reconcil", "verification"]):
+        pivot_detail = "reconciliation, verification, and meticulous data validation"
+    elif any(kw in text for kw in ["compliance", "regulatory", "policy"]):
+        pivot_detail = "regulatory compliance, audit preparation, and policy adherence"
+    elif any(kw in text for kw in ["data", "analysis", "report"]):
+        pivot_detail = "financial data analysis, reporting, and transaction processing"
+
+    cover_letter = (
+        f"Dear Hiring Manager, I am writing to express my strong interest in the {title} "
+        f"position at {company}. With {rp.TOTAL_YEARS_EXPERIENCE:.0f}+ years in financial "
+        f"operations, including {pivot_detail}, I bring directly transferable skills to "
+        f"underwriting support. My career in accounts payable across MNCs and Singapore "
+        f"statutory boards has built a rigorous foundation in {transfer_str}. I am eager to "
+        f"apply my expertise in {tech_str} and my proven attention to detail to contribute "
+        f"meaningfully to your underwriting team."
+    )
+
     return {
         "match_score": score,
         "strengths": strengths[:5],
@@ -223,6 +304,9 @@ def _analyse_job(job: dict, score: float) -> dict:
             f"reconciliation, and compliance skills transfer directly to underwriting support."
         ),
         "resume_tips": resume_tips[:5],
+        "cover_letter": cover_letter,
+        "expiring_soon": _is_expiring_soon(job),
+        "salary_benchmark": _salary_benchmark(job),
     }
 
 

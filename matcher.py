@@ -14,6 +14,7 @@ Threshold: 0.70  (equivalent to role being clearly AP-related with some descript
 
 from __future__ import annotations
 import re
+from datetime import datetime, timedelta
 import resume_profile as rp
 
 MATCH_THRESHOLD = 0.50  # internal threshold; displayed in email scaled to 70–100%
@@ -48,6 +49,20 @@ ROLE_TITLES = [
     "accounts executive", "accounts officer", "financial officer",
     "ap manager", "finance manager", "accounts manager",
 ]
+
+# Singapore market salary benchmarks (monthly SGD, based on 2025/2026 data)
+SALARY_BENCHMARKS = {
+    "accounts payable": (3800, 5500),
+    "ap officer": (3500, 5000),
+    "ap executive": (3800, 5500),
+    "finance executive": (4000, 6500),
+    "accounts executive": (3500, 5500),
+    "finance officer": (3800, 5500),
+    "accounting executive": (3800, 5500),
+    "accounts officer": (3500, 5000),
+    "ap manager": (6000, 9000),
+    "finance manager": (7000, 12000),
+}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -99,6 +114,52 @@ def keyword_match_score(job: dict) -> float:
 
     score = (role_s * 0.35) + (core_s * 0.35) + (tech_s * 0.20) + (soft_s * 0.10)
     return round(score, 4)
+
+
+# ── Expiring soon & salary benchmark helpers ─────────────────────────────────
+
+def _is_expiring_soon(job: dict) -> bool:
+    """Return True if job was posted 11+ days ago (within 3 days of 14-day cutoff)."""
+    posted = job.get("posted_date") or job.get("posted") or ""
+    if not posted:
+        return False
+    for fmt in ("%Y-%m-%d", "%d %b %Y", "%d/%m/%Y", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            posted_dt = datetime.strptime(posted.strip()[:19], fmt)
+            days_ago = (datetime.now() - posted_dt).days
+            return days_ago >= 11
+        except (ValueError, TypeError):
+            continue
+    return False
+
+
+def _salary_benchmark(job: dict) -> str:
+    """Compare job salary against market benchmarks. Returns label or ''."""
+    title_norm = _norm(job.get("title", ""))
+    bench = None
+    for role, rng in SALARY_BENCHMARKS.items():
+        if role in title_norm:
+            bench = rng
+            break
+    if bench is None:
+        return ""
+
+    salary_str = (job.get("salary") or "").lower().replace(",", "")
+    if not salary_str or "not disclosed" in salary_str:
+        return ""
+
+    nums = re.findall(r"[\d]+(?:\.[\d]+)?", salary_str)
+    if not nums:
+        return ""
+
+    sal_min = float(nums[0])
+    sal_max = float(nums[-1]) if len(nums) > 1 else sal_min
+
+    if sal_min >= bench[1]:
+        return "Above market"
+    if sal_max <= bench[0]:
+        return "Below market"
+    return "At market"
 
 
 # ── Analysis ──────────────────────────────────────────────────────────────────
@@ -175,6 +236,31 @@ def _analyse_job(job: dict, score: float) -> dict:
         "Quantify one achievement per role (e.g., 'Processed SGD X million in vendor payments monthly')",
     ])
 
+    # ── Cover letter snippet ─────────────────────────────────────────────────
+    skill_highlights = matched_func[:3] or ["accounts payable", "reconciliation", "vendor management"]
+    skill_str = ", ".join(skill_highlights)
+    key_erp = matched_erp[:2] or ["ERP systems"]
+    erp_str = ", ".join(s.upper() for s in key_erp)
+
+    achievement = "end-to-end AP process management across APAC entities"
+    if any(kw in text for kw in ["oracle", "fusion"]):
+        achievement = "Oracle Fusion Cloud implementation and UAT across APAC entities at DP World"
+    elif any(kw in text for kw in ["sap"]):
+        achievement = "SAP-driven AP automation and month-end close optimisation"
+    elif any(kw in text for kw in ["reconcil"]):
+        achievement = "reconciling 200+ vendor SOAs monthly with under 1% discrepancy"
+    elif any(kw in text for kw in ["compliance", "audit", "tax"]):
+        achievement = "ensuring compliance with withholding tax regulations and audit readiness"
+
+    cover_letter = (
+        f"Dear Hiring Manager, I am writing to express my keen interest in the {title} "
+        f"position at {company}. With {rp.TOTAL_YEARS_EXPERIENCE:.0f}+ years of hands-on "
+        f"accounts payable and financial operations experience across MNCs and Singapore "
+        f"statutory boards, I bring a strong foundation in {skill_str}. My recent role at "
+        f"DP World involved {achievement}. I am confident that my expertise in {erp_str} "
+        f"and {skill_str} would add immediate value to your team."
+    )
+
     return {
         "match_score": score,
         "strengths": strengths[:5],
@@ -184,6 +270,9 @@ def _analyse_job(job: dict, score: float) -> dict:
             f"years of hands-on AP experience, ERP system proficiency, and Singapore market background."
         ),
         "resume_tips": resume_tips[:5],
+        "cover_letter": cover_letter,
+        "expiring_soon": _is_expiring_soon(job),
+        "salary_benchmark": _salary_benchmark(job),
     }
 
 

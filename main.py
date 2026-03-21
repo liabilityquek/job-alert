@@ -36,6 +36,7 @@ from matcher import match_and_analyse as match_ap
 from matcher_underwriting import match_and_analyse as match_uw
 from email_builder import build_email
 from email_sender import send_job_alert, send_test_email
+from sheets_tracker import filter_new_jobs, mark_jobs_sent, log_to_sheet
 
 # ── Underwriting search queries ────────────────────────────────────────────
 UW_QUERIES = [
@@ -94,6 +95,41 @@ def _scrape_all(queries: list[str] | None, label: str, mcf_only: bool) -> list[d
     return unique
 
 
+def _enrich_company_info(jobs: list[dict]) -> None:
+    """Extract basic company info from job descriptions."""
+    for job in jobs:
+        desc = (job.get("description", "") or "").lower()
+        info_parts = []
+
+        # Company size signals
+        if any(kw in desc for kw in ["mnc", "multinational", "global"]):
+            info_parts.append("MNC")
+        elif any(kw in desc for kw in ["sme", "startup", "start-up"]):
+            info_parts.append("SME/Startup")
+        elif any(kw in desc for kw in ["government", "statutory board", "public sector"]):
+            info_parts.append("Public Sector")
+
+        # Industry signals
+        industries = {
+            "banking": ["bank", "banking"],
+            "insurance": ["insurance", "insurer", "underwriting"],
+            "shipping": ["shipping", "maritime", "logistics"],
+            "manufacturing": ["manufacturing", "factory"],
+            "technology": ["tech", "software", "IT services"],
+            "healthcare": ["healthcare", "hospital", "medical"],
+            "retail": ["retail", "e-commerce", "ecommerce"],
+            "real estate": ["property", "real estate"],
+            "energy": ["oil", "gas", "energy"],
+        }
+        for industry, keywords in industries.items():
+            if any(kw in desc for kw in keywords):
+                info_parts.append(industry.title())
+                break
+
+        if info_parts:
+            job["company_info"] = " · ".join(info_parts)
+
+
 # ── Pipeline runner ────────────────────────────────────────────────────────
 def _run_pipeline(
     label: str,
@@ -129,6 +165,15 @@ def _run_pipeline(
             subject, html = build_email([], role_category=role_category)
             send_job_alert(subject, html)
         return 0
+
+    # Filter out previously sent jobs
+    before_dedup = len(matched_jobs)
+    matched_jobs = filter_new_jobs(matched_jobs, label)
+    if before_dedup != len(matched_jobs):
+        print(f"[{label}] Filtered {before_dedup - len(matched_jobs)} previously sent jobs.")
+
+    # Enrich with company info
+    _enrich_company_info(matched_jobs)
 
     # Guarantee at least 5 LinkedIn jobs in the final list (if available)
     LINKEDIN_MIN = 5
@@ -167,6 +212,8 @@ def _run_pipeline(
         success = send_job_alert(subject, html_body)
         if success:
             print(f"\n[{label}] Done. Sent {len(matched_jobs)} job matches.")
+            mark_jobs_sent(matched_jobs, label)
+            log_to_sheet(matched_jobs, label)
         else:
             print(f"\n[{label}] Email failed.")
 

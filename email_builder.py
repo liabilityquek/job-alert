@@ -96,7 +96,25 @@ def _job_card(job: dict, index: int) -> str:
         meta_parts.append(f"&#128197; {posted_display}")
     if source:
         meta_parts.append(f"&#127758; {source}")
+    company_info = job.get("company_info", "")
+    if company_info:
+        meta_parts.append(f"\U0001f3e2 {company_info}")
     meta_html = "&nbsp;&nbsp;|&nbsp;&nbsp;".join(meta_parts)
+
+    # Expiring Soon badge
+    if a.get("expiring_soon"):
+        meta_html += "&nbsp;&nbsp;" + _badge("Expiring Soon", WARNING)
+
+    # Salary Benchmark badge
+    salary_benchmark = a.get("salary_benchmark", "")
+    if salary_benchmark:
+        bench_colours = {
+            "Above market": SUCCESS,
+            "At market": ACCENT,
+            "Below market": WARNING,
+        }
+        bench_colour = bench_colours.get(salary_benchmark, ACCENT)
+        meta_html += "&nbsp;&nbsp;" + _badge(salary_benchmark, bench_colour)
 
     return f"""
 <table width="100%" cellpadding="0" cellspacing="0" border="0"
@@ -169,6 +187,12 @@ def _job_card(job: dict, index: int) -> str:
           </td>
         </tr>
       </table>
+
+      {"" if not a.get("cover_letter", "") else f'''<!-- Cover letter snippet -->
+      <div style="margin-top:16px;padding:14px 18px;background:#f0f6ff;border-left:3px solid {ACCENT};border-radius:0 6px 6px 0;">
+        <div style="font-size:12px;font-weight:700;color:{ACCENT};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Suggested Cover Letter Opening</div>
+        <p style="margin:0;font-size:13px;color:{TEXT_DARK};line-height:1.7;font-style:italic;">{a.get("cover_letter", "")}</p>
+      </div>'''}
     </td>
   </tr>
   <!-- CTA footer -->
@@ -196,7 +220,7 @@ def _summary_row(job: dict, index: int) -> str:
              font-size:13px;font-weight:600;color:{TEXT_DARK};">
     {job['title']}<br>
     <span style="font-weight:400;color:{TEXT_MID};">{job['company']}</span><br>
-    <span style="color:{colour};font-weight:700;font-size:12px;">{score}% match</span>
+    <span style="color:{colour};font-weight:700;font-size:12px;">{score}% match{"&nbsp;&#9888;&#65039; Expiring" if a.get("expiring_soon") else ""}</span>
   </td>
   <td style="padding:14px 16px;border-bottom:1px solid {BORDER};
              font-size:12px;color:{TEXT_MID};line-height:1.6;">

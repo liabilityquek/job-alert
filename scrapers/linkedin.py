@@ -30,6 +30,37 @@ TIME_FILTER = "r1209600"
 SINGAPORE_GEO_ID = "102454443"
 
 
+def _fetch_full_description(job_url: str) -> str:
+    """Fetch the full job description from a LinkedIn job page."""
+    try:
+        resp = requests.get(job_url, headers=HEADERS, timeout=10)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        desc_el = None
+
+        # Try selector 1: div with class description__text or show-more-less-html__markup
+        desc_el = soup.find("div", class_=re.compile(
+            r"description__text|show-more-less-html__markup"
+        ))
+
+        # Try selector 2: section with class description
+        if not desc_el:
+            desc_el = soup.find("section", class_=re.compile(r"description"))
+
+        # Try selector 3: any div with class job-description
+        if not desc_el:
+            desc_el = soup.find("div", class_=re.compile(r"job-description"))
+
+        if not desc_el:
+            return ""
+
+        text = desc_el.get_text(separator=" ", strip=True)
+        return text[:2000]
+    except Exception:
+        return ""
+
+
 def _scrape_query(query: str, max_pages: int = 2) -> list[dict]:
     """Scrape LinkedIn public job listings for a single query."""
     jobs = []
@@ -153,6 +184,12 @@ def _scrape_query(query: str, max_pages: int = 2) -> list[dict]:
                     "employment_type": "",
                     "posted_date": posted,
                 })
+
+                # Attempt to fetch the full job description
+                full_desc = _fetch_full_description(job_url)
+                if full_desc:
+                    jobs[-1]["description"] = full_desc
+                time.sleep(1)  # polite delay after each fetch
             except Exception as e:
                 print(f"[LinkedIn] Error parsing card: {e}")
                 continue

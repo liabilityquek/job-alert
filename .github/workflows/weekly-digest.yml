@@ -1,12 +1,12 @@
-name: Job Alert System
+name: Weekly Job Market Digest
 
 on:
   schedule:
-    - cron: "0 0 */2 * *"   # Every 2 days at 8:00 AM Singapore time (UTC+8 = 00:00 UTC)
-  workflow_dispatch:          # Allow manual "Run workflow" button in GitHub UI
+    - cron: "0 2 * * 0"   # Every Sunday at 10:00 AM Singapore time (UTC+8 = 02:00 UTC)
+  workflow_dispatch:        # Allow manual "Run workflow" button in GitHub UI
 
 jobs:
-  run-job-alert:
+  run-weekly-digest:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -29,20 +29,10 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run Job Alert System
+      - name: Run Weekly Digest
         env:
           COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           RESUME_PROFILE: ${{ secrets.RESUME_PROFILE }}
-          TRACKER_SHEET_ID: ${{ secrets.TRACKER_SHEET_ID }}
-        run: python main.py
-
-      - name: Persist sent_jobs.json for dedup tracking
-        if: always()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add sent_jobs.json || true
-          git diff --cached --quiet || git commit -m "chore: update sent_jobs.json [skip ci]"
-          git push || true
+        run: python weekly_digest.py
