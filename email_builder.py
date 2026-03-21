@@ -367,9 +367,11 @@ def build_email(jobs: list[dict]) -> tuple[str, str]:
         <div style="color:#b3d4f0;font-size:12px;line-height:1.8;">
           This alert was generated automatically from
           <strong style="color:#ffffff;">MyCareersFuture</strong>,
-          <strong style="color:#ffffff;">Indeed</strong>, and
-          <strong style="color:#ffffff;">JobStreet</strong>.<br>
-          Showing Singapore roles posted in the last 14 days with ≥70% profile match.<br>
+          <strong style="color:#ffffff;">Indeed</strong>,
+          <strong style="color:#ffffff;">JobStreet</strong>, and
+          <strong style="color:#ffffff;">LinkedIn</strong>.<br>
+          Showing Singapore roles posted in the last 14 days with ≥70% profile match
+          &amp; min SGD 4,000 salary.<br>
           <span style="color:{GOLD};">Next alert in 2 days.</span>
         </div>
         <div style="margin-top:12px;color:#6b87a0;font-size:11px;">

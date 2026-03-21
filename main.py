@@ -31,7 +31,7 @@ def _check_env() -> list[str]:
     return warnings
 
 # ── Imports (after env loaded) ─────────────────────────────────────────────
-from scrapers import mycareersfuture, indeed, jobstreet
+from scrapers import mycareersfuture, indeed, jobstreet, linkedin
 from matcher import match_and_analyse
 from email_builder import build_email
 from email_sender import send_job_alert, send_test_email
@@ -80,6 +80,13 @@ def run(dry_run: bool = False, mcf_only: bool = False) -> int:
             all_jobs.extend(js_jobs)
         except Exception as e:
             print(f"[Main] JobStreet scraper error: {e}")
+
+        # LinkedIn Singapore
+        try:
+            li_jobs = linkedin.scrape()
+            all_jobs.extend(li_jobs)
+        except Exception as e:
+            print(f"[Main] LinkedIn scraper error: {e}")
 
     # ── Deduplicate by URL ──────────────────────────────────────────────────
     seen_urls: set[str] = set()

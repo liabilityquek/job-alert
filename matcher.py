@@ -187,17 +187,50 @@ def _analyse_job(job: dict, score: float) -> dict:
     }
 
 
+# ── Salary filter ─────────────────────────────────────────────────────────────
+
+MIN_SALARY = 4000  # SGD per month
+
+def _parse_min_salary(salary_str: str) -> float | None:
+    """Extract the minimum salary number from a salary string.
+    Returns None if salary is not disclosed or unparseable."""
+    if not salary_str:
+        return None
+    s = salary_str.lower().replace(",", "")
+    if "not disclosed" in s or s.strip() == "":
+        return None
+    nums = re.findall(r"[\d]+(?:\.[\d]+)?", s)
+    if nums:
+        return float(nums[0])
+    return None
+
+
+def _passes_salary_filter(job: dict) -> bool:
+    """Return True if job salary >= MIN_SALARY or salary is not disclosed."""
+    salary_str = job.get("salary", "")
+    min_sal = _parse_min_salary(salary_str)
+    if min_sal is None:
+        return True   # include jobs that don't disclose salary
+    return min_sal >= MIN_SALARY
+
+
 # ── Main entry point ──────────────────────────────────────────────────────────
 
 def match_and_analyse(jobs: list[dict]) -> list[dict]:
     matched = []
+    salary_filtered = 0
     for job in jobs:
+        if not _passes_salary_filter(job):
+            salary_filtered += 1
+            continue
         score = keyword_match_score(job)
         if score < MATCH_THRESHOLD:
             continue
         job["analysis"] = _analyse_job(job, score)
         job["match_score"] = score
         matched.append(job)
+    if salary_filtered:
+        print(f"[Matcher] {salary_filtered} jobs filtered out (salary below SGD {MIN_SALARY:,})")
 
     matched.sort(key=lambda j: j["match_score"], reverse=True)
     print(
