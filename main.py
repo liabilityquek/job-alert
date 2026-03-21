@@ -111,6 +111,12 @@ def run(dry_run: bool = False, mcf_only: bool = False) -> int:
             send_job_alert(subject, html)
         return 0
 
+    # ── Cap results to top 20 (Gmail has a ~1 MB body limit) ──────────────
+    MAX_JOBS = 20
+    if len(matched_jobs) > MAX_JOBS:
+        print(f"[Main] {len(matched_jobs)} matches found — sending top {MAX_JOBS} by score.")
+        matched_jobs = matched_jobs[:MAX_JOBS]
+
     # ── Step 3: Build email ─────────────────────────────────────────────────
     print(f"\n[Step 3/4] Building HTML email for {len(matched_jobs)} matched jobs...")
     print("-" * 40)
