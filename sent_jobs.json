@@ -526,5 +526,53 @@
     "score": 0,
     "date_found": "2026-03-21T17:08:03.801224",
     "pipeline": "AP/Finance"
+  },
+  "https://sg.linkedin.com/jobs/view/executive-accounts-payable-at-temasek-polytechnic-4385497508": {
+    "title": "Executive, Accounts Payable",
+    "company": "Temasek Polytechnic",
+    "source": "LinkedIn",
+    "score": 0,
+    "date_found": "2026-03-21T17:34:51.850464",
+    "pipeline": "AP/Finance"
+  },
+  "https://sg.linkedin.com/jobs/view/officer-accounts-payable-au-1-year-contract-at-certis-4378755540": {
+    "title": "Officer, Accounts Payable - AU (1-Year Contract)",
+    "company": "Certis",
+    "source": "LinkedIn",
+    "score": 0,
+    "date_found": "2026-03-21T17:34:51.850464",
+    "pipeline": "AP/Finance"
+  },
+  "https://sg.linkedin.com/jobs/view/executive-senior-executive-corporate-finance-office-at-national-university-health-system-4386777859": {
+    "title": "Executive/Senior Executive, Corporate Finance Office",
+    "company": "National University Health System",
+    "source": "LinkedIn",
+    "score": 0,
+    "date_found": "2026-03-21T17:34:51.850464",
+    "pipeline": "AP/Finance"
+  },
+  "https://sg.linkedin.com/jobs/view/accounts-payable-specialist-6-months-contract-at-acca-careers-4387939758": {
+    "title": "Accounts Payable Specialist (6 months contract)",
+    "company": "ACCA Careers",
+    "source": "LinkedIn",
+    "score": 0,
+    "date_found": "2026-03-21T17:34:51.850464",
+    "pipeline": "AP/Finance"
+  },
+  "https://sg.linkedin.com/jobs/view/assistant-accounting-manager-at-oceanstar-elite-engineering-groups-pte-ltd-4388718490": {
+    "title": "Assistant Accounting Manager",
+    "company": "OceanSTAR Elite Engineering Groups Pte. Ltd.",
+    "source": "LinkedIn",
+    "score": 0,
+    "date_found": "2026-03-21T17:34:51.850464",
+    "pipeline": "AP/Finance"
+  },
+  "https://sg.linkedin.com/jobs/view/underwriting-assistant-at-axa-xl-4363702632": {
+    "title": "Underwriting Assistant",
+    "company": "AXA XL",
+    "source": "LinkedIn",
+    "score": 0,
+    "date_found": "2026-03-21T17:38:13.924007",
+    "pipeline": "Underwriting"
   }
 }
