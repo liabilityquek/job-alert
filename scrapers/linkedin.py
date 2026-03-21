@@ -162,13 +162,14 @@ def _scrape_query(query: str, max_pages: int = 2) -> list[dict]:
     return jobs
 
 
-def scrape() -> list[dict]:
-    """Scrape LinkedIn for Singapore AP/Finance roles."""
+def scrape(queries: list[str] | None = None) -> list[dict]:
+    """Scrape LinkedIn for Singapore jobs.
+    If queries is None, uses TARGET_ROLES from resume profile."""
     all_jobs = []
     seen_urls = set()
 
-    # Use top 4 target roles to avoid rate limiting
-    queries = TARGET_ROLES[:4]
+    # Use top 4 queries to avoid rate limiting
+    queries = (queries or TARGET_ROLES)[:4]
 
     for query in queries:
         print(f"[LinkedIn] Searching: {query}")

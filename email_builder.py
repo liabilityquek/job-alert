@@ -212,17 +212,19 @@ def _summary_row(job: dict, index: int) -> str:
 </tr>"""
 
 
-def build_email(jobs: list[dict]) -> tuple[str, str]:
+def build_email(jobs: list[dict], role_category: str = "AP / Finance") -> tuple[str, str]:
     """
     Build the full HTML email.
     Returns (subject_line, html_body).
+
+    role_category: label shown in the email header, e.g. "AP / Finance" or "Underwriting".
     """
     today = datetime.now().strftime("%d %B %Y")
     count = len(jobs)
     top_score = round(jobs[0]["match_score"] * 100) if jobs else 0
 
     subject = (
-        f"&#127381; {count} Matched Job Alert{'s' if count != 1 else ''} for You "
+        f"&#127381; {count} {role_category} Job Alert{'s' if count != 1 else ''} for You "
         f"— {today}"
     )
 
@@ -271,7 +273,7 @@ def build_email(jobs: list[dict]) -> tuple[str, str]:
                  border-radius:12px 12px 0 0;padding:36px 36px 28px;">
         <div style="color:{GOLD};font-size:11px;font-weight:700;
                     letter-spacing:2px;text-transform:uppercase;
-                    margin-bottom:8px;">Personalised Job Alert</div>
+                    margin-bottom:8px;">Personalised Job Alert — {role_category}</div>
         <div style="color:#ffffff;font-size:26px;font-weight:700;
                     margin-bottom:4px;">Hi, {rp.CANDIDATE_NAME.split()[0]}! 👋</div>
         <div style="color:#b3d4f0;font-size:14px;margin-bottom:20px;">

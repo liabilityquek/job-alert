@@ -105,12 +105,14 @@ def _fetch_for_query(query: str, max_pages: int = 3) -> list[dict]:
     return jobs
 
 
-def scrape() -> list[dict]:
-    """Scrape MyCareersFuture for Singapore AP/Finance jobs."""
+def scrape(queries: list[str] | None = None) -> list[dict]:
+    """Scrape MyCareersFuture for Singapore jobs.
+    If queries is None, uses TARGET_ROLES from resume profile."""
+    search_terms = (queries or TARGET_ROLES)[:6]
     all_jobs = []
     seen_urls = set()
 
-    for role in TARGET_ROLES[:6]:  # top 6 roles to avoid rate limiting
+    for role in search_terms:
         print(f"[MCF] Searching: {role}")
         jobs = _fetch_for_query(role)
         for job in jobs:

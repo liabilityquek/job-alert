@@ -14,12 +14,12 @@ import os
 import sys
 import argparse
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 
 # ── Load environment variables ─────────────────────────────────────────────
-# load_dotenv is a no-op when .env doesn't exist (e.g. on GitHub Actions)
 ENV_PATH = Path(__file__).parent / ".env"
-load_dotenv(ENV_PATH, override=False)  # env vars set by CI take priority
+load_dotenv(ENV_PATH, override=False)
 
 # ── Validate .env before importing anything else ───────────────────────────
 def _check_env() -> list[str]:
@@ -32,122 +32,176 @@ def _check_env() -> list[str]:
 
 # ── Imports (after env loaded) ─────────────────────────────────────────────
 from scrapers import mycareersfuture, indeed, jobstreet, linkedin
-from matcher import match_and_analyse
+from matcher import match_and_analyse as match_ap
+from matcher_underwriting import match_and_analyse as match_uw
 from email_builder import build_email
 from email_sender import send_job_alert, send_test_email
 
+# ── Underwriting search queries ────────────────────────────────────────────
+UW_QUERIES = [
+    "underwriting assistant",
+    "underwriting executive",
+    "underwriting officer",
+    "insurance assistant",
+    "insurance executive",
+    "claims assistant",
+]
 
-def run(dry_run: bool = False, mcf_only: bool = False) -> int:
+MAX_JOBS = 20
+
+
+# ── Scraper helpers ────────────────────────────────────────────────────────
+def _scrape_all(queries: list[str] | None, label: str, mcf_only: bool) -> list[dict]:
+    """Run all scrapers for the given queries and return deduplicated jobs."""
+    all_jobs: list[dict] = []
+
+    try:
+        all_jobs.extend(mycareersfuture.scrape(queries))
+    except Exception as e:
+        print(f"[{label}] MyCareersFuture error: {e}")
+
+    if not mcf_only:
+        try:
+            all_jobs.extend(indeed.scrape())
+        except Exception as e:
+            print(f"[{label}] Indeed error: {e}")
+
+        try:
+            all_jobs.extend(jobstreet.scrape())
+        except Exception as e:
+            print(f"[{label}] JobStreet error: {e}")
+
+        try:
+            all_jobs.extend(linkedin.scrape(queries))
+        except Exception as e:
+            print(f"[{label}] LinkedIn error: {e}")
+
+    # Deduplicate
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for job in all_jobs:
+        url = job.get("url", "")
+        if url and url not in seen:
+            seen.add(url)
+            unique.append(job)
+        elif not url:
+            key = f"{job['title']}|{job['company']}".lower()
+            if key not in seen:
+                seen.add(key)
+                unique.append(job)
+
+    print(f"[{label}] Total scraped (deduplicated): {len(unique)} jobs")
+    return unique
+
+
+# ── Pipeline runner ────────────────────────────────────────────────────────
+def _run_pipeline(
+    label: str,
+    role_category: str,
+    queries: list[str] | None,
+    matcher_fn,
+    dry_run: bool,
+    mcf_only: bool,
+) -> int:
     """
-    Full pipeline:
-      1. Scrape job portals
-      2. Deduplicate
-      3. Match against resume (>=70%)
-      4. AI-enhance analysis
-      5. Build HTML email
-      6. Send email
+    Full pipeline for one role category:
+      1. Scrape  2. Match  3. Build email  4. Send
 
     Returns the number of matched jobs.
     """
-    print("=" * 60)
-    print("  Job Alert System — Starting Run")
-    print("=" * 60)
+    print(f"\n{'=' * 60}")
+    print(f"  {label} Pipeline — Starting")
+    print(f"{'=' * 60}")
 
-    # ── Step 1: Scrape ──────────────────────────────────────────────────────
-    all_jobs: list[dict] = []
-
-    print("\n[Step 1/4] Scraping job portals...")
+    # Step 1: Scrape
+    print(f"\n[{label} Step 1/4] Scraping job portals...")
     print("-" * 40)
+    unique_jobs = _scrape_all(queries, label, mcf_only)
 
-    # MyCareersFuture (official Singapore API — most reliable)
-    try:
-        mcf_jobs = mycareersfuture.scrape()
-        all_jobs.extend(mcf_jobs)
-    except Exception as e:
-        print(f"[Main] MyCareersFuture scraper error: {e}")
-
-    if not mcf_only:
-        # Indeed Singapore
-        try:
-            indeed_jobs = indeed.scrape()
-            all_jobs.extend(indeed_jobs)
-        except Exception as e:
-            print(f"[Main] Indeed scraper error: {e}")
-
-        # JobStreet Singapore
-        try:
-            js_jobs = jobstreet.scrape()
-            all_jobs.extend(js_jobs)
-        except Exception as e:
-            print(f"[Main] JobStreet scraper error: {e}")
-
-        # LinkedIn Singapore
-        try:
-            li_jobs = linkedin.scrape()
-            all_jobs.extend(li_jobs)
-        except Exception as e:
-            print(f"[Main] LinkedIn scraper error: {e}")
-
-    # ── Deduplicate by URL ──────────────────────────────────────────────────
-    seen_urls: set[str] = set()
-    unique_jobs: list[dict] = []
-    for job in all_jobs:
-        url = job.get("url", "")
-        if url and url not in seen_urls:
-            seen_urls.add(url)
-            unique_jobs.append(job)
-        elif not url:
-            # Deduplicate by title+company if no URL
-            key = f"{job['title']}|{job['company']}".lower()
-            if key not in seen_urls:
-                seen_urls.add(key)
-                unique_jobs.append(job)
-
-    print(f"\n[Main] Total scraped (deduplicated): {len(unique_jobs)} jobs")
-
-    # ── Step 2: Match ───────────────────────────────────────────────────────
-    print("\n[Step 2/4] Matching jobs against resume profile...")
+    # Step 2: Match
+    print(f"\n[{label} Step 2/4] Matching jobs against profile...")
     print("-" * 40)
-    matched_jobs = match_and_analyse(unique_jobs)
+    matched_jobs = matcher_fn(unique_jobs)
 
     if not matched_jobs:
-        print("[Main] No jobs met the 70% match threshold this cycle.")
+        print(f"[{label}] No jobs met the threshold this cycle.")
         if not dry_run:
-            # Still send an email so the user knows the system ran
-            subject, html = build_email([])
+            subject, html = build_email([], role_category=role_category)
             send_job_alert(subject, html)
         return 0
 
-    # ── Cap results to top 20 (Gmail has a ~1 MB body limit) ──────────────
-    MAX_JOBS = 20
+    # Cap to top 20
     if len(matched_jobs) > MAX_JOBS:
-        print(f"[Main] {len(matched_jobs)} matches found — sending top {MAX_JOBS} by score.")
+        print(f"[{label}] {len(matched_jobs)} matches — sending top {MAX_JOBS}.")
         matched_jobs = matched_jobs[:MAX_JOBS]
 
-    # ── Step 3: Build email ─────────────────────────────────────────────────
-    print(f"\n[Step 3/4] Building HTML email for {len(matched_jobs)} matched jobs...")
+    # Step 3: Build email
+    print(f"\n[{label} Step 3/4] Building HTML email for {len(matched_jobs)} jobs...")
     print("-" * 40)
-    subject, html_body = build_email(matched_jobs)
-    print(f"[Main] Email subject: {subject[:80]}")
+    subject, html_body = build_email(matched_jobs, role_category=role_category)
+    print(f"[{label}] Subject: {subject[:80]}")
 
-    # ── Step 4: Send ────────────────────────────────────────────────────────
+    # Step 4: Send
     if dry_run:
-        print("\n[Step 4/4] DRY RUN — email not sent.")
-        # Save HTML to file for preview
-        preview_path = Path(__file__).parent / "preview_email.html"
+        print(f"\n[{label} Step 4/4] DRY RUN — email not sent.")
+        safe_name = label.lower().replace(" ", "_")
+        preview_path = Path(__file__).parent / f"preview_{safe_name}.html"
         preview_path.write_text(html_body, encoding="utf-8")
-        print(f"[Main] Preview saved to: {preview_path}")
+        print(f"[{label}] Preview: {preview_path}")
     else:
-        print("\n[Step 4/4] Sending email...")
+        print(f"\n[{label} Step 4/4] Sending email...")
         print("-" * 40)
         success = send_job_alert(subject, html_body)
         if success:
-            print(f"\n✓ Done. Sent {len(matched_jobs)} job matches.")
+            print(f"\n[{label}] Done. Sent {len(matched_jobs)} job matches.")
         else:
-            print("\n✗ Email failed. Check your .env credentials.")
+            print(f"\n[{label}] Email failed.")
+
+    return len(matched_jobs)
+
+
+# ── Main orchestrator ──────────────────────────────────────────────────────
+def run(dry_run: bool = False, mcf_only: bool = False) -> int:
+    """Run both pipelines (AP/Finance + Underwriting) in parallel."""
+    print("=" * 60)
+    print("  Job Alert System — Starting Run (2 pipelines)")
+    print("=" * 60)
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = {
+            pool.submit(
+                _run_pipeline,
+                "AP/Finance", "AP / Finance",
+                None,       # uses TARGET_ROLES from resume_profile
+                match_ap,
+                dry_run, mcf_only,
+            ): "AP/Finance",
+            pool.submit(
+                _run_pipeline,
+                "Underwriting", "Underwriting",
+                UW_QUERIES,
+                match_uw,
+                dry_run, mcf_only,
+            ): "Underwriting",
+        }
+        for future in as_completed(futures):
+            name = futures[future]
+            try:
+                count = future.result()
+                results[name] = count
+            except Exception as e:
+                print(f"\n[Main] {name} pipeline error: {e}")
+                results[name] = 0
 
     print("\n" + "=" * 60)
-    return len(matched_jobs)
+    print("  Final Summary")
+    print("=" * 60)
+    for name, count in results.items():
+        print(f"  {name}: {count} jobs sent")
+    print("=" * 60)
+
+    return sum(results.values())
 
 
 def main():
@@ -158,20 +212,19 @@ def main():
     )
     parser.add_argument(
         "--dry-run", action="store_true",
-        help="Scrape and match but do not send the email (saves preview_email.html)"
+        help="Scrape and match but do not send the email (saves preview HTML)"
     )
     parser.add_argument(
         "--mcf-only", action="store_true",
-        help="Scrape MyCareersFuture only (faster, skips Indeed and JobStreet)"
+        help="Scrape MyCareersFuture only (faster, skips other portals)"
     )
     args = parser.parse_args()
 
-    # Print env warnings
     warnings = _check_env()
     if warnings:
-        print("\n⚠  Configuration warnings:")
+        print("\n  Configuration warnings:")
         for w in warnings:
-            print(f"   • {w}")
+            print(f"   * {w}")
         print()
 
     if args.test_email:
