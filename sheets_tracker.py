@@ -35,19 +35,18 @@ def _read_sent_urls_from_sheet(sheet_id: str) -> set:
             params={
                 "spreadsheet_id": sheet_id,
                 "sheet_name": "Sheet1",
-                "ranges": "Sheet1!C:C",
+                "ranges": ["C:C"],
             },
         )
 
         urls = set()
-        if result.get("successfull") or result.get("successful"):
-            data = result.get("data", {})
-            value_ranges = data.get("valueRanges", [])
-            if value_ranges:
-                rows = value_ranges[0].get("values", [])
-                for row in rows[1:]:  # skip header row
-                    if row and row[0]:
-                        urls.add(row[0].strip())
+        data = result.get("data", {})
+        value_ranges = data.get("valueRanges", [])
+        if value_ranges:
+            rows = value_ranges[0].get("values", [])
+            for row in rows[1:]:  # skip header row
+                if row and row[0]:
+                    urls.add(row[0].strip())
 
         print(f"[sheets_tracker] Read {len(urls)} existing URL(s) from Google Sheet.")
         return urls
