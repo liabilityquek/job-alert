@@ -1,6 +1,9 @@
 # Environment — contains API keys, never commit this
 .env
 
+# Resume data — contains personal information, never commit this
+resume_secret.json
+
 # Email preview output
 preview_email.html
 
