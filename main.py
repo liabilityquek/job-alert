@@ -130,10 +130,23 @@ def _run_pipeline(
             send_job_alert(subject, html)
         return 0
 
-    # Cap to top 20
-    if len(matched_jobs) > MAX_JOBS:
-        print(f"[{label}] {len(matched_jobs)} matches — sending top {MAX_JOBS}.")
+    # Guarantee at least 5 LinkedIn jobs in the final list (if available)
+    LINKEDIN_MIN = 5
+    linkedin_jobs = [j for j in matched_jobs if j.get("source") == "LinkedIn"]
+    other_jobs = [j for j in matched_jobs if j.get("source") != "LinkedIn"]
+
+    if linkedin_jobs:
+        li_slots = min(LINKEDIN_MIN, len(linkedin_jobs))
+        other_slots = MAX_JOBS - li_slots
+        final_jobs = other_jobs[:other_slots] + linkedin_jobs[:li_slots]
+        # Re-sort by score so the email flows best-match-first
+        final_jobs.sort(key=lambda j: j.get("match_score", 0), reverse=True)
+        matched_jobs = final_jobs
+        print(f"[{label}] {len(other_jobs)} non-LinkedIn + {len(linkedin_jobs)} LinkedIn matched — "
+              f"reserved {li_slots} LinkedIn slots.")
+    elif len(matched_jobs) > MAX_JOBS:
         matched_jobs = matched_jobs[:MAX_JOBS]
+        print(f"[{label}] {len(matched_jobs)} matches — sending top {MAX_JOBS}.")
 
     # Step 3: Build email
     print(f"\n[{label} Step 3/4] Building HTML email for {len(matched_jobs)} jobs...")
