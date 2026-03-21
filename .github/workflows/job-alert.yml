@@ -34,4 +34,5 @@ jobs:
           COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          RESUME_PROFILE: ${{ secrets.RESUME_PROFILE }}
         run: python main.py
