@@ -319,24 +319,9 @@ def build_email(jobs: list[dict], role_category: str = "AP / Finance") -> tuple[
       </td>
     </tr>
 
-    <!-- ── MAIN CONTENT ─────────────────────────────────────────────────── -->
+    <!-- ── SUMMARY TABLE (placed first so Gmail clipping doesn't hide it) ── -->
     <tr>
-      <td style="background:{CARD_BG};padding:28px 36px;
-                 border:1px solid {BORDER};border-top:none;">
-
-        <h2 style="margin:0 0 20px;font-size:16px;color:{PRIMARY};
-                   border-bottom:2px solid {ACCENT};padding-bottom:10px;">
-          &#127775; Top Matched Roles
-        </h2>
-
-        {cards_html}
-
-      </td>
-    </tr>
-
-    <!-- ── SUMMARY TABLE ───────────────────────────────────────────────── -->
-    <tr>
-      <td style="background:{CARD_BG};padding:0 36px 28px;
+      <td style="background:{CARD_BG};padding:28px 36px 28px;
                  border:1px solid {BORDER};border-top:none;">
         <h2 style="margin:0 0 16px;font-size:16px;color:{PRIMARY};
                    border-bottom:2px solid {ACCENT};padding-bottom:10px;">
@@ -359,6 +344,21 @@ def build_email(jobs: list[dict], role_category: str = "AP / Finance") -> tuple[
            '<tr><td colspan="4" style="padding:20px;text-align:center;color:#6b7280;">'
            'No jobs to display.</td></tr>'}
         </table>
+      </td>
+    </tr>
+
+    <!-- ── MAIN CONTENT (individual job cards) ────────────────────────────── -->
+    <tr>
+      <td style="background:{CARD_BG};padding:28px 36px;
+                 border:1px solid {BORDER};border-top:none;">
+
+        <h2 style="margin:0 0 20px;font-size:16px;color:{PRIMARY};
+                   border-bottom:2px solid {ACCENT};padding-bottom:10px;">
+          &#127775; Detailed Job Cards
+        </h2>
+
+        {cards_html}
+
       </td>
     </tr>
 
