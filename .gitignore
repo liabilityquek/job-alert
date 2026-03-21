@@ -1,0 +1,15 @@
+# Environment — contains API keys, never commit this
+.env
+
+# Email preview output
+preview_email.html
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyc
+.pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db
