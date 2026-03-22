@@ -121,27 +121,34 @@ def _job_card(job: dict, index: int) -> str:
        style="margin-bottom:24px;border-radius:10px;overflow:hidden;
               border:1px solid {BORDER};background:{CARD_BG};
               box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+  <!-- Thin accent bar -->
+  <tr>
+    <td style="background:linear-gradient(90deg,{ACCENT},#00b4d8);height:4px;font-size:0;line-height:0;">&nbsp;</td>
+  </tr>
   <!-- Card header -->
   <tr>
-    <td style="background:linear-gradient(135deg,{PRIMARY},{ACCENT});
-               padding:18px 24px;">
+    <td style="background:{CARD_BG};padding:20px 24px 16px;">
       <table width="100%" cellpadding="0" cellspacing="0">
         <tr>
           <td>
-            <div style="color:#ffffff;font-size:10px;font-weight:600;
+            <div style="font-size:10px;font-weight:600;color:{TEXT_LIGHT};
                         letter-spacing:1.5px;text-transform:uppercase;
-                        margin-bottom:4px;">#{index} &nbsp;|&nbsp; {source}</div>
-            <div style="color:#ffffff;font-size:20px;font-weight:700;
-                        margin-bottom:2px;">{job['title']}</div>
-            <div style="color:#b3d4f0;font-size:14px;">
+                        margin-bottom:6px;">
+              <span style="display:inline-block;padding:2px 8px;background:#e8f0fe;
+                           color:{ACCENT};border-radius:4px;font-size:10px;
+                           font-weight:700;margin-right:6px;">#{index}</span>
+              {source}</div>
+            <div style="color:{TEXT_DARK};font-size:20px;font-weight:700;
+                        margin-bottom:4px;line-height:1.3;">{job['title']}</div>
+            <div style="color:{TEXT_MID};font-size:14px;">
               {job['company']} &nbsp;&#8226;&nbsp; {job['location']}
             </div>
           </td>
           <td style="text-align:right;vertical-align:top;white-space:nowrap;">
-            <div style="background:rgba(255,255,255,0.15);border-radius:8px;
-                        padding:8px 14px;display:inline-block;">
-              <div style="color:#e0f0ff;font-size:10px;margin-bottom:3px;">
-                MATCH SCORE</div>
+            <div style="background:#f0f6ff;border:1px solid {BORDER};border-radius:8px;
+                        padding:10px 16px;display:inline-block;">
+              <div style="color:{ACCENT};font-size:10px;font-weight:600;
+                          margin-bottom:4px;letter-spacing:0.5px;">MATCH SCORE</div>
               {_score_bar(score)}
             </div>
           </td>
