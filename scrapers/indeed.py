@@ -1,24 +1,14 @@
 """
-Indeed Singapore scraper — uses their public job search page.
+Indeed Singapore scraper — uses Firecrawl to scrape Indeed search pages.
 Targets Singapore-based AP/Finance roles posted in the last 14 days.
 """
 
+import os
 import re
 import time
-import requests
-from datetime import datetime, timedelta
-from bs4 import BeautifulSoup
+from firecrawl import FirecrawlApp
 
 BASE_URL = "https://sg.indeed.com"
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "en-SG,en;q=0.9",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-}
 CUTOFF_DAYS = 14
 SEARCH_QUERIES = [
     "accounts payable",
@@ -28,127 +18,169 @@ SEARCH_QUERIES = [
 ]
 
 
-def _parse_posted_date(text: str) -> bool:
-    """Return True if the 'X days ago' text is within the 14-day cutoff."""
-    if not text:
-        return True
-    text = text.lower().strip()
-    if "just posted" in text or "today" in text or "hours ago" in text:
-        return True
-    match = re.search(r"(\d+)\s*day", text)
-    if match:
-        days_ago = int(match.group(1))
-        return days_ago <= CUTOFF_DAYS
-    return True  # include if unparseable
+def _get_firecrawl() -> FirecrawlApp:
+    api_key = os.getenv("FIRECRAWL_API_KEY", "")
+    if not api_key:
+        raise EnvironmentError("FIRECRAWL_API_KEY not set")
+    return FirecrawlApp(api_key=api_key)
 
 
-def _scrape_query(query: str, max_pages: int = 3) -> list[dict]:
+def _parse_jobs_from_markdown(md: str) -> list[dict]:
+    """Parse job listings from Indeed's markdown output."""
+    jobs = []
+    if not md:
+        return jobs
+
+    # Indeed markdown has job blocks starting with ## [Title](url)
+    # or patterns like: ## [Job Title](link)\nCompany\nLocation
+    blocks = re.split(r'(?=##\s*\[)', md)
+
+    for block in blocks:
+        try:
+            # Extract title and URL: ## [Title](url)
+            title_match = re.search(r'##\s*\[([^\]]+)\]\(([^)]+)\)', block)
+            if not title_match:
+                continue
+
+            title = title_match.group(1).strip()
+            raw_url = title_match.group(2).strip()
+
+            # Build full URL
+            if raw_url.startswith("/"):
+                job_url = BASE_URL + raw_url
+            elif raw_url.startswith("http"):
+                job_url = raw_url
+            else:
+                continue
+
+            # Clean tracking params but keep job key
+            job_url = job_url.split("&xkcb=")[0]
+
+            # Extract remaining text after title
+            rest = block[title_match.end():]
+            lines = [l.strip() for l in rest.split("\n") if l.strip()]
+
+            # Company is usually the first non-empty line after title
+            company = "N/A"
+            company_found = False
+            location = "Singapore"
+            salary = "Not disclosed"
+            description = ""
+            posted_text = ""
+
+            for line in lines:
+                # Skip nav/filter lines
+                if any(skip in line.lower() for skip in [
+                    "skip to", "edit location", "find jobs", "all salaries",
+                    "upload your", "sort by", "relevance", "page ", "next",
+                ]):
+                    continue
+
+                # Detect salary patterns
+                if re.search(r'\$[\d,]+', line) and not company_found:
+                    salary = line
+                    continue
+
+                # Detect posted date
+                if re.search(r'(posted|ago|today|just)', line, re.I):
+                    posted_text = line
+                    continue
+
+                # First meaningful line is company
+                if company == "N/A" and len(line) > 1 and not line.startswith("|"):
+                    # Clean HTML remnants from company name
+                    clean = re.sub(r'<[^>]+>', '', line).strip().strip('|').strip()
+                    if clean:
+                        company = clean
+                    else:
+                        company = line
+                    company_found = True
+                    continue
+
+                # Next line could be location
+                if company_found and "singapore" in line.lower():
+                    location = line
+                    continue
+
+                # Remaining is description
+                if len(line) > 20:
+                    description += " " + line
+
+            # Only include Singapore roles
+            if "singapore" not in location.lower() and "singapore" not in block.lower():
+                continue
+
+            jobs.append({
+                "source": "Indeed",
+                "title": title,
+                "company": company,
+                "location": location,
+                "salary": salary,
+                "url": job_url,
+                "description": description.strip()[:2000],
+                "employment_type": "",
+                "posted_date": posted_text,
+            })
+        except Exception as e:
+            print(f"[Indeed] Error parsing block: {e}")
+            continue
+
+    return jobs
+
+
+def _scrape_query(app: FirecrawlApp, query: str, max_pages: int = 2) -> list[dict]:
+    """Scrape Indeed search results using Firecrawl."""
     jobs = []
     seen = set()
 
     for page_num in range(max_pages):
         start = page_num * 10
-        url = f"{BASE_URL}/jobs"
-        params = {
-            "q": query,
-            "l": "Singapore",
-            "sort": "date",
-            "fromage": str(CUTOFF_DAYS),
-            "start": str(start),
-        }
+        url = (
+            f"{BASE_URL}/jobs?q={query.replace(' ', '+')}"
+            f"&l=Singapore&sort=date&fromage={CUTOFF_DAYS}&start={start}"
+        )
         try:
-            resp = requests.get(url, params=params, headers=HEADERS, timeout=15)
-            resp.raise_for_status()
+            result = app.scrape(url, formats=["markdown"])
+            md = getattr(result, "markdown", "") or ""
+            if not md:
+                print(f"[Indeed] Empty result for '{query}' page {page_num}")
+                break
+
+            parsed = _parse_jobs_from_markdown(md)
+            for job in parsed:
+                if job["url"] not in seen:
+                    seen.add(job["url"])
+                    jobs.append(job)
+
         except Exception as e:
             print(f"[Indeed] Error on page {page_num} for '{query}': {e}")
             break
 
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        # Indeed uses data-jk attribute for job keys
-        job_cards = soup.find_all("div", class_=re.compile(r"job_seen_beacon|tapItem"))
-        if not job_cards:
-            job_cards = soup.find_all("li", class_=re.compile(r"css-5lfssm|result"))
-
-        for card in job_cards:
-            try:
-                # Title
-                title_el = card.find("h2", class_=re.compile(r"jobTitle")) or \
-                           card.find("a", {"data-jk": True})
-                title = title_el.get_text(strip=True) if title_el else "N/A"
-
-                # Company
-                company_el = card.find("span", {"data-testid": "company-name"}) or \
-                             card.find("span", class_=re.compile(r"companyName"))
-                company = company_el.get_text(strip=True) if company_el else "N/A"
-
-                # Location
-                location_el = card.find("div", {"data-testid": "text-location"}) or \
-                              card.find("div", class_=re.compile(r"companyLocation"))
-                location = location_el.get_text(strip=True) if location_el else "Singapore"
-
-                # Only include Singapore roles
-                if "singapore" not in location.lower() and location != "N/A":
-                    continue
-
-                # Job URL
-                link_el = card.find("a", href=re.compile(r"/rc/clk|/pagead|/jobs/"))
-                if not link_el:
-                    link_el = card.find("a", {"data-jk": True})
-                href = link_el["href"] if link_el and link_el.get("href") else ""
-                job_url = (BASE_URL + href) if href.startswith("/") else href
-
-                if job_url in seen:
-                    continue
-                seen.add(job_url)
-
-                # Date posted
-                date_el = card.find("span", class_=re.compile(r"date|posted"))
-                posted_text = date_el.get_text(strip=True) if date_el else ""
-                if not _parse_posted_date(posted_text):
-                    continue
-
-                # Salary
-                salary_el = card.find("div", class_=re.compile(r"salary|compensation"))
-                salary = salary_el.get_text(strip=True) if salary_el else "Not disclosed"
-
-                # Snippet / description
-                snippet_el = card.find("div", class_=re.compile(r"summary|snippet"))
-                description = snippet_el.get_text(strip=True) if snippet_el else ""
-
-                jobs.append({
-                    "source": "Indeed",
-                    "title": title,
-                    "company": company,
-                    "location": location,
-                    "salary": salary,
-                    "url": job_url,
-                    "description": description,
-                    "employment_type": "",
-                    "posted_date": posted_text,
-                })
-            except Exception as e:
-                print(f"[Indeed] Error parsing card: {e}")
-                continue
-
-        time.sleep(1.5)  # polite delay
+        time.sleep(1)
 
     return jobs
 
 
-def scrape() -> list[dict]:
-    """Scrape Indeed Singapore for AP/Finance roles."""
+def scrape(queries: list[str] | None = None) -> list[dict]:
+    """Scrape Indeed Singapore for jobs using Firecrawl."""
+    try:
+        app = _get_firecrawl()
+    except EnvironmentError as e:
+        print(f"[Indeed] {e} — skipping Indeed scraper")
+        return []
+
+    search_terms = queries or SEARCH_QUERIES
     all_jobs = []
     seen_urls = set()
 
-    for query in SEARCH_QUERIES:
+    for query in search_terms:
         print(f"[Indeed] Searching: {query}")
-        jobs = _scrape_query(query)
+        jobs = _scrape_query(app, query)
         for job in jobs:
             if job["url"] and job["url"] not in seen_urls:
                 seen_urls.add(job["url"])
                 all_jobs.append(job)
-        time.sleep(2)
+        time.sleep(1)
 
     print(f"[Indeed] Total unique jobs found: {len(all_jobs)}")
     return all_jobs
