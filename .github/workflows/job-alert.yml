@@ -36,5 +36,6 @@ jobs:
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           RESUME_PROFILE: ${{ secrets.RESUME_PROFILE }}
           TRACKER_SHEET_ID: ${{ secrets.TRACKER_SHEET_ID }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
         run: python main.py
 
